@@ -58,6 +58,30 @@ Key points:
 - Use **current, non-preview** model names. `gemini-3.5-flash` is the newest non-preview Gemini; `gemini-3.1-flash-lite` for cheap/vision; `gpt-5.4`; `claude-sonnet-4-6` (there is no Claude *Sonnet* 4.7 — only Opus goes to 4.7/4.8). A model must also be in Denario's `denario/llm.py` registry or `llm_parser` raises `KeyError`.
 - For **quick tests, set `max_n_steps: 3–4`.**
 
+### Every module maps to one stage
+
+`params.yaml` has one **module per pipeline stage**, each with its own named
+agents (every agent is a `{ model, temperature }` entry). You usually only edit
+the module for the stage you're running:
+
+| Module | Stage (tool) | Backend | Key agents |
+|---|---|---|---|
+| `Idea module` | `denario_idea` | LangGraph | idea_sampler, idea_selector1/2/3, idea_chooser, idea_maker, idea_hater |
+| `Methods module` | `denario_methods` | LangGraph | methods, reviewer1/2/3, improver |
+| **`Analysis module`** | **`denario_results`** | **cmbagent_lg** | engineer, researcher, planner, plan_reviewer, evaluator (+ `max_n_steps`, VLM) |
+| `Paper module` | `denario_paper` | LangGraph | keywords_writer, section_writer, refiner, audio_summarizer |
+| `Evaluator module` | `denario_evaluate` | LangGraph | reporter, idea/methods/input/results_reviewer, new_iteration_reviewer |
+| `Citations` | `denario_paper(add_citations=True)` | LangGraph | backend (valency/perplexity), citation_inserter |
+| `Classifier module` | `denario_classify` | LangGraph | archive_classifier, subcategory_classifier |
+| `Reviewer module` | paper review | LangGraph | reviewer1/2/3, meta_reviewer |
+| `Literature module` | `denario_literature` | LangGraph | literature, summarizer |
+| `EDA module` | `denario_eda` | **legacy cmbagent** | engineer/researcher/planner/plan_reviewer/evaluator |
+
+Top-level keys: `max_iterations` (iterate-loop cap) and `hardware_constraints`.
+Only the **Analysis module** drives cmbagent_lg (and so honours `vlm_model` /
+`max_vlm_review_attempts`); the rest are LangGraph. **Full per-agent breakdown +
+an annotated end-to-end `params.yaml` → [reference.md](reference.md).**
+
 ## The cmbagent_lg engine (direct, low-level)
 
 `denario_results` wraps cmbagent_lg, but you can drive the engine directly for a single task — useful for iterating on a plan or resuming a crashed run:

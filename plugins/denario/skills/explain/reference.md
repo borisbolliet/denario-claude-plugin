@@ -41,46 +41,107 @@ Server log: `/tmp/denario-mcp.log` (override `DENARIO_MCP_LOG`).
 `execute`/`restart` reuse whatever `plan` set. Server log: `/tmp/cmbagent-lg-mcp.log`
 (override `CMBAGENT_LG_MCP_LOG`).
 
-## `params.yaml` — module structure
+## `params.yaml` — full structure
 
-Denario reads `params.yaml` as a dict of **modules**; each stage uses its own
-module. Per-agent entries are `{ model: <name>, temperature: <float> }`; the
-**provider is inferred from the model name**. Scalar hyperparameters sit at the
-top of the module.
+Denario reads `params.yaml` as a dict of **modules**, one per pipeline stage.
+Inside a module, each **named agent** is an entry `{ model: <name>, temperature:
+<float> }` — the **provider is inferred from the model name**. Stage-level scalar
+hyperparameters (`max_n_steps`, `max_n_attempts`, `code_execution_timeout`,
+`enable_vlm_review`, …) sit at the top of the module. A few top-level keys live
+outside any module.
+
+Reference files: `Denario/tests/params_multiprovider.yaml` (compact, multi-provider)
+and `denario-scientists/data/params.yaml` (full production set).
+
+### Every module — which tool/backend uses it, and its agents
+
+| Module / key | Stage (tool) | Backend | Agents / keys |
+|---|---|---|---|
+| `max_iterations` (top level) | the iterate loop | — | int — max idea→…→evaluate cycles |
+| `hardware_constraints` (top level) | results/EDA planners | — | free-text machine description |
+| **`EDA module`** | `denario_eda` | **legacy cmbagent** | `engineer`, `researcher`, `planner`, `plan_reviewer`, `orchestration`, `evaluator` + `max_n_steps`, `max_n_attempts`, `code_execution_timeout`, `enable_vlm_review` |
+| **`Idea module`** | `denario_idea` | LangGraph | `idea_sampler`, `idea_selector1/2/3`, `idea_chooser`, `idea_maker`, `idea_hater` |
+| **`Literature module`** | `denario_literature` | LangGraph | `literature`, `summarizer` |
+| **`Methods module`** | `denario_methods` | LangGraph | `methods`, `reviewer1/2/3`, `improver` |
+| **`Analysis module`** | `denario_results` | **cmbagent_lg** | `engineer`, `researcher`, `planner`, `plan_reviewer`, `evaluator`, `orchestration` (unused) + `max_n_steps`, `max_n_attempts`, `code_execution_timeout`, `enable_vlm_review`, `vlm_model`, `max_vlm_review_attempts` |
+| **`Evaluator module`** | `denario_evaluate` | LangGraph | `reporter`, `idea_reviewer`, `methods_reviewer`, `input_reviewer`, `new_iteration_reviewer`, `results_reviewer` |
+| **`Paper module`** | `denario_paper` | LangGraph | `keywords_writer`, `section_writer`, `refiner`, `audio_summarizer` |
+| **`Citations`** | `denario_paper(add_citations=True)` | LangGraph | `backend` (`valency`/`perplexity`), `citation_inserter` |
+| **`Classifier module`** | `denario_classify` | LangGraph | `archive_classifier`, `subcategory_classifier` |
+| **`Reviewer module`** | paper review | LangGraph | `reviewer1/2/3`, `meta_reviewer` |
+
+Notes:
+- **Only `Analysis module` drives cmbagent_lg** (the results engine); its roles map to the cmbagent_lg agents in the table further down. `vlm_model` + `max_vlm_review_attempts` are cmbagent_lg-specific.
+- **`EDA module`** runs on the legacy cmbagent package (not in the cmbagent-lg venv) — it errors there.
+- A model named in any module you actually run must be in `denario/llm.py`'s registry, else `llm_parser` raises `KeyError`.
+
+### Annotated example (the stages you typically run)
 
 ```yaml
+max_iterations: 12
 hardware_constraints: "Standard laptop. Single CPU. No GPU."
 
-Idea module:        # LangGraph (fast mode) — denario_idea
-   idea_maker:   { model: gemini-3.1-flash-lite, temperature: 0.7 }
-   idea_hater:   { model: gemini-3.1-flash-lite, temperature: 0.1 }
-   # … idea_sampler / idea_selector1..3 / idea_chooser …
+Idea module:                 # denario_idea (LangGraph fast mode)
+   idea_sampler:    { model: gemini-3.1-flash-lite, temperature: 0.7 }
+   idea_selector1:  { model: gemini-3.1-flash-lite, temperature: 0.1 }
+   idea_selector2:  { model: gemini-3.1-flash-lite, temperature: 0.1 }
+   idea_selector3:  { model: gemini-3.1-flash-lite, temperature: 0.1 }
+   idea_chooser:    { model: gemini-3.1-flash-lite, temperature: 0.1 }
+   idea_maker:      { model: gemini-3.1-flash-lite, temperature: 0.7 }
+   idea_hater:      { model: gemini-3.1-flash-lite, temperature: 0.1 }
 
-Methods module:     # LangGraph — denario_methods
-   # gemini-* roles
+Methods module:              # denario_methods (LangGraph)
+   methods:    { model: gemini-3.1-flash-lite, temperature: 0.1 }
+   reviewer1:  { model: gemini-3.1-flash-lite, temperature: 0.1 }
+   reviewer2:  { model: gemini-3.1-flash-lite, temperature: 0.2 }
+   reviewer3:  { model: gemini-3.1-flash-lite, temperature: 0.2 }
+   improver:   { model: gemini-3.1-flash-lite, temperature: 0.2 }
 
-Analysis module:    # cmbagent_lg — denario_results  (see SKILL.md for the full block)
-   max_n_steps: 4
+Analysis module:             # denario_results (cmbagent_lg)
+   max_n_steps: 4            # small for tests (3–4), not 8–10
    max_n_attempts: 10
    code_execution_timeout: 300
    engineer:      { model: gemini-3.5-flash, temperature: 0.1 }
    researcher:    { model: gpt-5.4,          temperature: 0.1 }
    planner:       { model: gemini-3.5-flash, temperature: 0.1 }
    plan_reviewer: { model: claude-sonnet-4-6 }
-   orchestration: { model: gemini-3.1-flash-lite }   # read but unused by cmbagent_lg
+   orchestration: { model: gemini-3.1-flash-lite }   # read but unused
    evaluator:     { model: claude-sonnet-4-6 }
    enable_vlm_review: true
-   vlm_model:     { model: gemini-3.1-flash-lite }
+   vlm_model:     { model: gemini-3.1-flash-lite }   # vision-capable
    max_vlm_review_attempts: 2
 
-Paper module:       # LangGraph — denario_paper
-   # gemini-* roles; gemini-2.5-pro for heavier writing
+Paper module:                # denario_paper (LangGraph + latexmk)
+   keywords_writer:  { model: gemini-3.1-flash-lite, temperature: 0.1 }
+   section_writer:   { model: gemini-2.5-pro,        temperature: 0.1 }
+   refiner:          { model: gemini-2.5-pro,        temperature: 0.1 }
+   audio_summarizer: { model: gemini-3.1-flash-lite, temperature: 0.3 }
 
-# Evaluator / Reviewer / Classifier / Citations / Literature modules …
+Citations:                   # only when denario_paper(add_citations=True)
+   backend: valency           # or 'perplexity'
+   citation_inserter: { model: gemini-3.1-flash-lite, temperature: 0.1 }
+
+Evaluator module:            # denario_evaluate
+   reporter:               { model: gemini-3.1-flash-lite, temperature: 0.1 }
+   idea_reviewer:          { model: gemini-3.1-flash-lite, temperature: 0.2 }
+   methods_reviewer:       { model: gemini-3.1-flash-lite, temperature: 0.2 }
+   input_reviewer:         { model: gemini-3.1-flash-lite, temperature: 0.2 }
+   new_iteration_reviewer: { model: gemini-3.1-flash-lite, temperature: 0.1 }
+   results_reviewer:       { model: gemini-3.1-flash-lite, temperature: 0.2 }
+
+Classifier module:          # denario_classify
+   archive_classifier:     { model: gemini-3.1-flash-lite, temperature: 0.1 }
+   subcategory_classifier: { model: gemini-3.1-flash-lite, temperature: 0.1 }
+
+Reviewer module:            # paper review
+   reviewer1:     { model: gemini-3.1-flash-lite, temperature: 0.2 }
+   reviewer2:     { model: gemini-3.1-flash-lite, temperature: 0.2 }
+   reviewer3:     { model: gemini-3.1-flash-lite, temperature: 0.2 }
+   meta_reviewer: { model: gemini-3.1-flash-lite, temperature: 0.2 }
+
+# EDA module: …            # denario_eda — legacy cmbagent (not in the lg venv)
+# Literature module: …     # denario_literature (literature, summarizer)
 ```
-
-A reference `params.yaml` lives in the Denario repo (`tests/params_multiprovider.yaml`)
-and in `denario-scientists/data/params.yaml`.
 
 ### Model-name rules
 - Provider by prefix: `gemini-*` → Google (`GOOGLE_API_KEY`), `gpt-*`/`o1`/`o3`/`o4` → OpenAI (`OPENAI_API_KEY`), `claude-*` → Anthropic (`ANTHROPIC_API_KEY`).
