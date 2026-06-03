@@ -10,9 +10,17 @@
       "name": "denario",
       "source": "./plugins/denario",
       "description": "Denario multi-agent research assistant over MCP: drive the end-to-end pipeline (setup -> idea -> methods -> results -> paper) through the denario MCP tools, configure per-role/multi-provider models and the VLM image-reviewer via params.yaml, and run/resume the cmbagent_lg analysis engine (plan/execute/restart).",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "category": "science",
-      "tags": ["denario", "cmbagent", "research", "mcp", "multi-agent", "paper", "cosmology"],
+      "tags": [
+        "denario",
+        "cmbagent",
+        "research",
+        "mcp",
+        "multi-agent",
+        "paper",
+        "cosmology"
+      ],
       "homepage": "https://github.com/borisbolliet/denario-claude-plugin"
     }
   ]
