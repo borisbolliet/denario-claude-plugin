@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "denario": {
+      "command": "${DENARIO_MCP_PYTHON}",
+      "args": ["${DENARIO_MCP_DIR}/denario_server.py"]
+    },
+    "cmbagent_lg": {
+      "command": "${DENARIO_MCP_PYTHON}",
+      "args": ["${DENARIO_MCP_DIR}/cmbagent_lg_server.py"]
+    }
+  }
+}

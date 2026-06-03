@@ -17,7 +17,7 @@ All operate on a `project_dir` and a project iteration (`Iteration{N}/`).
 | `denario_methods` | `(project_dir, params_file=None, project_iteration=0)` | LangGraph → `methods.md` |
 | `denario_results` | `(project_dir, params_file=None, project_iteration=0, hardware_constraints=None, restart_at_step=-1)` | **cmbagent_lg** → `results.md` + plots. Synchronous/long |
 | `denario_evaluate` | `(project_dir, params_file=None, project_iteration=0)` | grade results, decide whether to iterate |
-| `denario_paper` | `(project_dir, params_file=None, project_iteration=-1, just_abstract=False, add_citations=False)` | LangGraph + latexmk → `paper.tex`/`paper.pdf` |
+| `denario_paper` | `(project_dir, params_file=None, project_iteration=-1, just_abstract=False, add_citations=False)` | LangGraph + latexmk → `paper.tex`/`paper.pdf`. Signature default is `False`, but **pass `add_citations=True`** — citations are part of the standard output |
 | `denario_classify` | `(project_dir, params_file=None, project_iteration=-1)` | arXiv-category classification |
 | `denario_status` | `(project_dir)` | progress/completeness |
 | `denario_publish` | `(project_dir, project_iteration=-1)` | build GitHub Pages site + push |

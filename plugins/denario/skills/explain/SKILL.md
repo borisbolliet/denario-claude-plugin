@@ -25,11 +25,32 @@ Each stage reads/writes a **project directory** laid out as `Iteration{N}/input_
 2. **`denario_idea(project_dir)`** → `idea.md` (LangGraph).
 3. **`denario_methods(project_dir)`** → `methods.md` (LangGraph).
 4. **`denario_results(project_dir)`** — **the heart**: runs cmbagent_lg (planning + step-by-step execution) on the idea+methods+data, writes `results.md` (a researcher-authored Results section) and moves the generated figures into `plots/`. Synchronous and long (minutes); watch `/tmp/denario-mcp.log`.
-5. **`denario_paper(project_dir, add_citations=False)`** → builds `paper.tex` + `paper.pdf` (LangGraph + latexmk). Set `add_citations=True` for the citation passes; `cmbagent_keywords=False` is the default (the keyword path needs the legacy cmbagent).
+5. **`denario_paper(project_dir, add_citations=True)`** → builds `paper.tex` + `paper.pdf` (LangGraph + latexmk). **Citations are part of the standard output — pass `add_citations=True` by default** (runs the Valency/Perplexity citation backend over Introduction + Methods, producing `paper_v3_citations` then `paper_v4_final`, and `paper.tex`/`paper.pdf` point at the final version). Pass `add_citations=False` only when the user says "no citations". `cmbagent_keywords=False` always (the keyword path needs the legacy cmbagent).
 
 `denario_status(project_dir)` reports progress; `denario_read_file` / `denario_list_files` inspect outputs.
 
 > Stages **idea / methods / paper** run on LangGraph; **results** runs on cmbagent_lg; **EDA and the cmbagent keyword path** still depend on the legacy `cmbagent` package and will error if it isn't installed in the server's venv.
+
+## The data description (the single most important input)
+
+The pipeline reads **only** the data description to understand your data — the planner and engineer get nothing else. A vague description causes wasted attempts and failed analyses. Write it for a reader who has never seen the data. A good one includes:
+
+1. **File inventory with ABSOLUTE paths, shapes, dtypes** — every file's full path, dimensions, column names / array keys, types. (See the absolute-paths rule below.)
+2. **What each variable means** — not just names: meaning, units, range, conventions (e.g. "returns are log-returns", "values in USD millions").
+3. **The data-generating process (if synthetic)** — model, parameter values, noise distribution, and any ground truth for validation.
+4. **Known properties & caveats** — missing values, outliers, class imbalance, correlations, stationarity, time resolution, censoring.
+5. **Suggested analyses (optional)** — specific hypotheses guide the planner toward productive directions.
+
+### ⚠️ Absolute paths only
+
+Every data-file path in the description (and anything the engineer loads) **must be absolute**. The engineer's code runs from a *different* working directory (`Iteration*/experiment_output/control/`), so **relative paths fail** with repeated `FileNotFoundError`.
+
+```
+WRONG:    - `data.csv` — the dataset
+CORRECT:  - `/abs/path/to/project/data.csv` — the dataset
+```
+
+Applies to CSVs, `.npy`, HDF5, everything. This is the #1 avoidable cause of a failed `denario_results` run.
 
 ## params.yaml is the control surface
 
@@ -109,5 +130,7 @@ The engine **checkpoints after every step** to `…/experiment_output/logs/deep_
 ## Going deeper
 
 For the full MCP tool reference (every tool + signature), the complete `params.yaml` schema (all modules), the output directory layout, and registering the servers with Claude Code, see [reference.md](reference.md).
+
+For *how to operate* — stage discipline, where logs/outputs land, the privacy + git/publish rules, and the evaluate→iterate loop — see the **[`conventions`](../conventions/SKILL.md)** skill.
 
 To run the whole pipeline end-to-end with one command, use **`/denario:run-pipeline`**.
