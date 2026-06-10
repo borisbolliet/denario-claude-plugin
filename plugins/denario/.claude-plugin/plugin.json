@@ -1,6 +1,6 @@
 {
   "name": "denario",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Denario multi-agent research assistant over MCP: drive the end-to-end pipeline (setup -> idea -> literature -> methods -> results -> evaluate/iterate -> paper -> classify/publish) through the denario MCP tools, configure per-role/multi-provider models and the VLM image-reviewer via params.yaml, and run/resume the cmbagent_lg analysis engine (plan/execute/restart). Bundles both MCP servers (denario, cmbagent_lg) via env-var-configured registration.",
   "author": {
     "name": "Boris Bolliet",

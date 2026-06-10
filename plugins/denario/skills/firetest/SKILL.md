@@ -8,16 +8,20 @@ allowed-tools: Read Glob Bash
 # Firetest the models in params.yaml
 
 A long Denario run can die minutes in on a single bad model name (`llm_parser`
-raises `KeyError`) or a missing API key. This skill runs every `{ model: ... }`
-spec in a project's `params.yaml` through three checks **before** you launch, so
-those failures surface in seconds:
+raises `KeyError`), a missing `temperature`, or a missing API key. This skill
+runs every `{ model: ... }` spec in a project's `params.yaml` through four checks
+**before** you launch, so those failures surface in seconds:
 
 1. **REGISTRY** — the name is in `denario.llm.max_output_tokens_dict`. If not,
    every stage that uses it `KeyError`s at parse time.
-2. **KEY** — the provider inferred from the name (same rule as cmbagent_lg:
+2. **TEMP** — the role has a `temperature:` key. `llm_parser` reads
+   `llm['temperature']` with **no default**, so a role omitting it dies with
+   `KeyError: 'temperature'` at stage setup (the reference example sets it on
+   *every* role for this reason — copy that, don't drop it).
+3. **KEY** — the provider inferred from the name (same rule as cmbagent_lg:
    `gemini-*`→`GOOGLE_API_KEY`, `gpt-*`/`o[1-4]*`→`OPENAI_API_KEY`,
    `claude-*`→`ANTHROPIC_API_KEY`) has its key in the environment.
-3. **LIVE** — builds the chat model via `cmbagent_lg.llms.chat_model` and sends a
+4. **LIVE** — builds the chat model via `cmbagent_lg.llms.chat_model` and sends a
    one-token ping, confirming the key/model pair is actually accepted (catches
    revoked keys, no-access models, billing/credit problems). Skip with `--offline`.
 
@@ -56,6 +60,9 @@ it), then `PASS`/`FAIL` and exit code `0`/`1`:
 - `REG MISSING` → the name isn't registered. Add it to `denario/llm.py`
   `max_output_tokens_dict`, or switch to a registered, **non-preview** name
   (`gemini-3.5-flash`, `gemini-3.1-flash-lite`, `gpt-5.4`, `claude-sonnet-4-6`).
+- `TEMP MISS xN` → N role(s) sharing that model omit `temperature:` (the detail
+  line names them). Add `temperature: <float>` to each — without it `llm_parser`
+  raises `KeyError: 'temperature'` the moment that stage starts.
 - `NO <KEY>` → export that API key in the MCP server's environment.
 - `LIVE FAIL` → the key/model pair was rejected; the detail line shows the error
   (auth, no model access, rate/credit limit).

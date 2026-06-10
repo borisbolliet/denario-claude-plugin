@@ -38,16 +38,43 @@ _KEY_FOR = {"google": "GOOGLE_API_KEY",
             "anthropic": "ANTHROPIC_API_KEY"}
 
 
+def _unshadow(pkg: str) -> None:
+    """Stop a sibling source checkout from shadowing the installed `pkg`.
+
+    Run from a dir that contains a `cmbagent_lg/`/`denario/` *repo checkout*
+    (e.g. ~/GitHub, where Claude Code's Bash runs), cwd lands on sys.path and
+    Python imports that repo root as an empty namespace package — the real
+    package's symbols (PlanContext, max_output_tokens_dict, …) go missing. Drop
+    cwd and any sys.path entry whose immediate `pkg` child lacks an __init__.py.
+    (Mirrors the MCP servers' own guard so the firetest imports what they do.)
+    """
+    drop = set()
+    for p in list(sys.path):
+        if p in ("", "."):
+            drop.add(p)
+            continue
+        cand = os.path.join(p, pkg)
+        if os.path.isdir(cand) and not os.path.isfile(os.path.join(cand, "__init__.py")):
+            drop.add(p)
+    if drop:
+        sys.path[:] = [p for p in sys.path if p not in drop]
+
+
 def _is_local(name: str) -> bool:
     n = name.lower()
     return "/" in name or n.startswith(_LOCAL_PREFIXES)
 
 
 def _walk(node, path=""):
-    """Yield (model_name, dotted_path) for every dict that has a str `model`."""
+    """Yield (model_name, dotted_path, has_temperature) for each `model` spec.
+
+    `has_temperature` matters because denario.llm.llm_parser reads
+    `llm['temperature']` with no default — a spec missing the key raises
+    `KeyError: 'temperature'` the moment its stage starts.
+    """
     if isinstance(node, dict):
         if isinstance(node.get("model"), str):
-            yield node["model"], path or "(root)"
+            yield node["model"], path or "(root)", ("temperature" in node)
         for k, v in node.items():
             child = f"{path}.{k}" if path else str(k)
             yield from _walk(v, child)
@@ -84,6 +111,8 @@ def main() -> int:
                     help="per-model live-ping timeout in seconds (default 30)")
     args = ap.parse_args()
 
+    _unshadow("cmbagent_lg")
+    _unshadow("denario")
     try:
         import yaml
         from denario.llm import max_output_tokens_dict as REGISTRY
@@ -100,10 +129,10 @@ def main() -> int:
     with open(args.params) as f:
         params = yaml.safe_load(f)
 
-    # unique model -> sorted list of dotted usage paths
-    usage: dict[str, list[str]] = {}
-    for name, path in _walk(params):
-        usage.setdefault(name, []).append(path)
+    # unique model -> list of (dotted usage path, has_temperature)
+    usage: dict[str, list[tuple[str, bool]]] = {}
+    for name, path, has_temp in _walk(params):
+        usage.setdefault(name, []).append((path, has_temp))
     if not usage:
         print(f"No `model:` entries found in {args.params}.")
         return 0
@@ -113,11 +142,20 @@ def main() -> int:
 
     rows, ok_all = [], True
     for name in sorted(usage):
+        uses = usage[name]
         local = _is_local(name)
         provider = "local" if local else _provider(name)
+        notes = []
 
         in_reg = name in REGISTRY
         reg = "ok" if in_reg else "MISSING"
+
+        # temperature: llm_parser does llm['temperature'] with no default,
+        # so any role omitting it KeyErrors at stage setup.
+        no_temp = [p for p, ht in uses if not ht]
+        temp = "ok" if not no_temp else f"MISS x{len(no_temp)}"
+        if no_temp:
+            notes.append("no `temperature:` on -> " + ", ".join(sorted(no_temp)))
 
         if local:
             key = "n/a"
@@ -127,32 +165,40 @@ def main() -> int:
 
         if args.offline or local or key.startswith("NO") or not in_reg:
             live = "skip" if (args.offline or local) else "-"
-            note = "local endpoint — start its *_BASE_URL server to test" if local else ""
+            if local:
+                notes.append("local endpoint — start its *_BASE_URL server to test")
         else:
             passed, detail = _live_ping(name, args.timeout)
-            live, note = ("ok", "") if passed else ("FAIL", detail)
+            live = "ok" if passed else "FAIL"
+            if not passed:
+                notes.append(detail)
 
-        failed = (not in_reg) or key.startswith("NO") or live == "FAIL"
+        failed = (not in_reg) or bool(no_temp) or key.startswith("NO") or live == "FAIL"
         ok_all = ok_all and not failed
-        rows.append((name, provider, reg, key, live, len(usage[name]), note))
+        rows.append((name, provider, reg, temp, key, live, len(uses), failed, notes))
 
     w = max(len(r[0]) for r in rows)
-    head = f"{'MODEL':<{w}}  {'PROVIDER':<9} {'REG':<8} {'KEY':<18} {'LIVE':<5} {'USES':<4}"
+    head = (f"{'MODEL':<{w}}  {'PROVIDER':<9} {'REG':<8} {'TEMP':<8} "
+            f"{'KEY':<18} {'LIVE':<5} {'USES':<4}")
     print(head)
     print("-" * len(head))
-    for name, provider, reg, key, live, uses, note in rows:
-        flag = "" if (reg == "ok" and not key.startswith("NO") and live != "FAIL") else "  <-- FIX"
-        print(f"{name:<{w}}  {provider:<9} {reg:<8} {key:<18} {live:<5} {uses:<4}{flag}")
-        if note:
+    for name, provider, reg, temp, key, live, n_uses, failed, notes in rows:
+        flag = "  <-- FIX" if failed else ""
+        print(f"{name:<{w}}  {provider:<9} {reg:<8} {temp:<8} "
+              f"{key:<18} {live:<5} {n_uses:<4}{flag}")
+        for note in notes:
             print(f"{'':<{w}}  -> {note}")
 
     print()
     if ok_all:
-        print("PASS - all models resolved, keyed, and (where tested) reachable.")
+        print("PASS - all models registered, keyed, temperature-set, and "
+              "(where tested) reachable.")
         return 0
     print("FAIL - fix the rows marked <-- FIX before running the pipeline:")
     print("  REG MISSING -> add the model to denario/llm.py max_output_tokens_dict, "
           "or use a registered name.")
+    print("  TEMP MISS   -> add `temperature: <float>` to that role; llm_parser "
+          "requires it (it reads llm['temperature'] with no default).")
     print("  NO <KEY>    -> export that API key in the MCP server's environment.")
     print("  LIVE FAIL   -> the key/model pair was rejected; check the detail line above.")
     return 1
