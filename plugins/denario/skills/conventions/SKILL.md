@@ -26,6 +26,12 @@ the OpenClaw/Slack/container specifics that don't apply to a local Claude Code r
     live `[cmbagent_lg]` banners during `denario_results`.
   - Structured output: `<project_dir>/Iteration<N>/<step>_output/`.
   - Stage docs: `<project_dir>/Iteration<N>/input_files/{data_description,idea,methods,results}.md`.
+- **Always reference the input data file by its full absolute path** in `data_description.md`,
+  wherever the file actually lives (the data folder is the user's, untouched by Denario, and
+  may sit anywhere on disk — not necessarily under the project). Generated code runs with
+  `cwd = Iteration<N>/experiment_output/`, not the project root, so a relative path resolves
+  against the wrong directory and the data load silently fails. Note `experiment_output/data/`
+  holds the engineer's *own* outputs — the input file is never copied there.
   - Figures: `<project_dir>/Iteration<N>/.../plots/` — only plots from **successful** steps
     propagate to the paper.
   - Use `denario_status(project_dir)` to see completeness + the best iteration.

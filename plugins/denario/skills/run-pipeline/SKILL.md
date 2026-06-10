@@ -22,7 +22,11 @@ Drive **each stage as a separate tool call** so a failure is localized; don't bu
 1. **Prepare the project** (avoid `denario_setup` unless the user wants a GitHub repo):
    - `mkdir -p $0/Iteration0/input_files`
    - Write the **data description** to `$0/Iteration0/input_files/data_description.md` (from
-     `$ARGUMENTS`, a referenced file, or by asking).
+     `$ARGUMENTS`, a referenced file, or by asking). **Reference the data file by its full
+     absolute path, wherever it actually lives** — the data folder is the user's, untouched
+     by Denario, and need not be inside the project tree. Never use a relative path: generated
+     code executes with `cwd = $0/Iteration<N>/experiment_output/`, so a path relative to the
+     project root resolves against the wrong directory and the load fails.
    - Put a **`params.yaml`** at `$0/params.yaml`. Start from
      `Denario/tests/params_multiprovider.yaml` (or `denario-scientists/data/params.yaml`)
      and set, in the `Analysis module`: `max_n_steps: 3`–`4` (small unless asked), current
