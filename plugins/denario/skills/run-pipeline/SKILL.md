@@ -35,6 +35,9 @@ Drive **each stage as a separate tool call** so a failure is localized; don't bu
      gemini-3.1-flash-lite`) if `--vlm`.
    - Ensure the matching API keys are in the server env (`GOOGLE_API_KEY`, plus
      `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` for those providers).
+   - **Firetest the models before launching** — run the [`firetest`](../firetest/SKILL.md)
+     skill on `$0/params.yaml` so an unregistered model name or a missing/rejected key is
+     caught in seconds, not minutes into `denario_results`. Don't start stage 2 on a FAIL.
 
 2. **Idea** → `denario_idea(project_dir=$0)`. Read `input_files/idea.md`; show a 1-line summary.
 
