@@ -14,10 +14,11 @@ runs every `{ model: ... }` spec in a project's `params.yaml` through four check
 
 1. **REGISTRY** — the name is in `denario.llm.max_output_tokens_dict`. If not,
    every stage that uses it `KeyError`s at parse time.
-2. **TEMP** — the role has a `temperature:` key. `llm_parser` reads
-   `llm['temperature']` with **no default**, so a role omitting it dies with
-   `KeyError: 'temperature'` at stage setup (the reference example sets it on
-   *every* role for this reason — copy that, don't drop it).
+2. **TEMP** — the role has a `temperature:` key. The firetest probes the
+   *installed* `llm_parser`: older Denario reads `llm['temperature']` with **no
+   default** (omitting it → `KeyError: 'temperature'` at stage setup = `MISS`,
+   fatal); newer Denario defaults it (→ `warn`, harmless). Either way the
+   reference example sets it on every role — simplest to just copy that.
 3. **KEY** — the provider inferred from the name (same rule as cmbagent_lg:
    `gemini-*`→`GOOGLE_API_KEY`, `gpt-*`/`o[1-4]*`→`OPENAI_API_KEY`,
    `claude-*`→`ANTHROPIC_API_KEY`) has its key in the environment.
@@ -60,9 +61,10 @@ it), then `PASS`/`FAIL` and exit code `0`/`1`:
 - `REG MISSING` → the name isn't registered. Add it to `denario/llm.py`
   `max_output_tokens_dict`, or switch to a registered, **non-preview** name
   (`gemini-3.5-flash`, `gemini-3.1-flash-lite`, `gpt-5.4`, `claude-sonnet-4-6`).
-- `TEMP MISS xN` → N role(s) sharing that model omit `temperature:` (the detail
-  line names them). Add `temperature: <float>` to each — without it `llm_parser`
-  raises `KeyError: 'temperature'` the moment that stage starts.
+- `TEMP MISS xN` → N role(s) omit `temperature:` and this Denario's `llm_parser`
+  **requires** it (the detail line names them); add `temperature: <float>` to each
+  or the stage `KeyError`s at setup. `TEMP warn xN` → same omission but this
+  Denario defaults it, so it's informational, not a failure.
 - `NO <KEY>` → export that API key in the MCP server's environment.
 - `LIVE FAIL` → the key/model pair was rejected; the detail line shows the error
   (auth, no model access, rate/credit limit).

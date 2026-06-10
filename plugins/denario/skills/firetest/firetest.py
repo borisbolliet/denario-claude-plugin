@@ -115,12 +115,22 @@ def main() -> int:
     _unshadow("denario")
     try:
         import yaml
-        from denario.llm import max_output_tokens_dict as REGISTRY
+        from denario.llm import max_output_tokens_dict as REGISTRY, llm_parser
         from cmbagent_lg.llms import _provider
     except Exception as e:  # noqa: BLE001
         print(f"ERROR: import failed ({e}). Run this on the cmbagent_lg venv "
               f"(the one the Denario MCP servers use).", file=sys.stderr)
         return 2
+
+    # Probe the *installed* llm_parser: older versions read llm['temperature']
+    # with no default (a temp-less role -> KeyError at stage setup = fatal);
+    # newer ones default it (-> harmless). Flag missing temperature accordingly,
+    # so this check stays correct across Denario versions.
+    try:
+        llm_parser({"model": next(iter(REGISTRY))})  # registered name, no temp
+        temp_required = False
+    except Exception:  # noqa: BLE001 - KeyError('temperature') on old versions
+        temp_required = True
 
     if not os.path.isfile(args.params):
         print(f"ERROR: no such file: {args.params}", file=sys.stderr)
@@ -150,12 +160,19 @@ def main() -> int:
         in_reg = name in REGISTRY
         reg = "ok" if in_reg else "MISSING"
 
-        # temperature: llm_parser does llm['temperature'] with no default,
-        # so any role omitting it KeyErrors at stage setup.
+        # temperature: fatal only if the installed llm_parser still requires it
+        # (older Denario); otherwise it's defaulted -> informational warning.
         no_temp = [p for p, ht in uses if not ht]
-        temp = "ok" if not no_temp else f"MISS x{len(no_temp)}"
-        if no_temp:
-            notes.append("no `temperature:` on -> " + ", ".join(sorted(no_temp)))
+        if not no_temp:
+            temp = "ok"
+        elif temp_required:
+            temp = f"MISS x{len(no_temp)}"
+            notes.append("no `temperature:` (REQUIRED by this Denario) on -> "
+                         + ", ".join(sorted(no_temp)))
+        else:
+            temp = f"warn x{len(no_temp)}"
+            notes.append("no `temperature:` (defaulted by Denario) on -> "
+                         + ", ".join(sorted(no_temp)))
 
         if local:
             key = "n/a"
@@ -173,7 +190,8 @@ def main() -> int:
             if not passed:
                 notes.append(detail)
 
-        failed = (not in_reg) or bool(no_temp) or key.startswith("NO") or live == "FAIL"
+        failed = ((not in_reg) or (bool(no_temp) and temp_required)
+                  or key.startswith("NO") or live == "FAIL")
         ok_all = ok_all and not failed
         rows.append((name, provider, reg, temp, key, live, len(uses), failed, notes))
 
@@ -197,8 +215,9 @@ def main() -> int:
     print("FAIL - fix the rows marked <-- FIX before running the pipeline:")
     print("  REG MISSING -> add the model to denario/llm.py max_output_tokens_dict, "
           "or use a registered name.")
-    print("  TEMP MISS   -> add `temperature: <float>` to that role; llm_parser "
-          "requires it (it reads llm['temperature'] with no default).")
+    print("  TEMP MISS   -> add `temperature: <float>` to that role; this "
+          "Denario's llm_parser requires it (reads llm['temperature'], no default). "
+          "(`TEMP warn` = optional here, just defaulted — not a failure.)")
     print("  NO <KEY>    -> export that API key in the MCP server's environment.")
     print("  LIVE FAIL   -> the key/model pair was rejected; check the detail line above.")
     return 1
